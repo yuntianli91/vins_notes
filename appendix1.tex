@@ -1,0 +1,638 @@
+\section{KLT稀疏光流跟踪算法}
+\label{append.a}
+\section{基于四元数微分的IMU预积分模型}
+\label{append.b}
+\subsection{IMU噪声与零偏模型}
+IMU的量测模型可表示为：
+\begin{equation}
+\left\{
+\begin{aligned}
+&\hat{\bm{a}}^b=\bm{a}^b+\bm{b}_a+\bm{R}_w^b\bm{g}^w+\bm{n}_a\\
+&\hat{\bm{\omega}}^b=\bm{\omega}^b+\bm{b}_\omega+\bm{n}_\omega
+\end{aligned}
+\right.
+\end{equation}
+式中，$\hat{\bm{a}}^b$和$\hat{\bm{\omega}}^b$分别表示IMU的加速度和角速度测量信息；$\bm{a}^b$和$\bm{\omega}^b$分别为载体真实的加速度和角速度；$\bm{b}_a$和$\bm{b}_\omega$分别为加速度计和陀螺仪零偏，建模为随机游走过程:
+\begin{equation}
+\centering
+\left\{
+\begin{aligned}
+&\bm{n}_{\bm{b}_a}\sim\mathcal{N}\left(\bm{0},\bm{\sigma}_{b_a}^2\right),\bm{n}_{\bm{b}_\omega}\sim\mathcal{N}\left(\bm{0},\bm{\sigma}_{b_\omega}^2\right)\\
+&\dot{\bm{b}_a}=\bm{n}_{\bm{b}_a},\dot{\bm{b}_\omega}=\bm{n}_{\bm{b}_\omega}
+\end{aligned}
+\right.
+\end{equation}
+$\bm{R}_w^b$为世界坐标系到本体坐标系的坐标旋转矩阵；$\bm{g}^w$为世界坐标系下的重力加速度矢量；$\bm{n}_a\sim\mathcal{N}\left(\bm{0},\bm{\sigma}_a^2\right)$和$\bm{n}_\omega\sim\left(\bm{0},\bm{\sigma}_\omega^2\right)$为器件的高斯白噪声。
+\subsection{四元数左乘与右乘}
+假设一个四元数$\bm{q}_a=\left[\begin{array}{cccc}w_a & x_a & y_a & z_a\end{array}\right]^T=\left[\begin{array}{cc}w_a & \bm{v}_a\end{array}\right]^T$，左乘和右乘的矩阵形式分别为：
+\begin{equation}
+\begin{aligned}
+L\left(\bm{q}_a\right)&=\left[\begin{matrix}
+w_a & -x_a & -y_a & -z_a\\
+x_a &  w_a & -z_a &  y_a\\
+y_a &  z_a &  w_a & -x_a\\
+z_a & -y_a &  x_a &  w_a
+\end{matrix}\right]=w_a\bm{I}+\left[\begin{matrix}
+0 & -\bm{v}_a^T\\
+\bm{v}_a & \bm{v}_a^\wedge
+\end{matrix}\right]\\
+R\left(\bm{q}_a\right)&=\left[\begin{matrix}
+w_a & -x_a & -y_a & -z_a\\
+x_a &  w_a &  z_a & -y_a\\
+y_a & -z_a &  w_a &  x_a\\
+z_a &  y_a & -x_a &  w_a
+\end{matrix}\right]=w_a\bm{I}+\left[\begin{matrix}
+0 & -\bm{v}_a^T\\
+\bm{v}_a & -\bm{v}_a^\wedge
+\end{matrix}\right]
+\end{aligned}
+\end{equation}
+若四元数的实部位于最后，即$\bm{q}_a=\left[\begin{array}{cccc}x_a & y_a & z_a & w_a\end{array}\right]^T=\left[\begin{array}{cc}\bm{v}_a & w_a\end{array}\right]^T$，则对应的左乘和右乘矩阵为：
+\begin{equation}
+\begin{aligned}
+L\left(\bm{q}_a\right)&=\left[\begin{matrix}
+  w_a & -z_a &  y_a & x_a\\
+  z_a &  w_a & -x_a & y_a\\
+ -y_a &  x_a &  w_a & z_a\\
+ -x_a & -y_a & -z_a & w_a
+\end{matrix}\right]=w_a\bm{I}+\left[\begin{matrix}
+\bm{v}_a^\wedge & \bm{v}_a\\
+-\bm{v}_a^T & 0
+\end{matrix}\right]\\
+R\left(\bm{q}_a\right)&=\left[\begin{matrix}
+  w_a &  z_a & -y_a & x_a\\
+ -z_a &  w_a &  x_a & y_a\\
+  y_a & -x_a &  w_a & z_a\\
+ -x_a & -y_a & -z_a & w_a
+\end{matrix}\right]=w_a\bm{I}+\left[\begin{matrix}
+-\bm{v}_a^\wedge & \bm{v}_a\\
+-\bm{v}_a^T & 0
+\end{matrix}\right]
+\end{aligned}
+\end{equation}
+\subsection{四元数微分}
+假设世界坐标系旋转到本体坐标系的旋转轴为$\bm{n}$，旋转角为$\theta$，则对应的旋转四元数为$\bm{q}=\cos\left(\frac{\theta}{2}\right)+\sin\left(\frac{\theta}{2}\right)\bm{n}$，该单位四元数对时间的导数为：
+\begin{equation}
+\centering
+\frac{d\bm{q}}{dt}=-\frac{1}{2}\sin\left(\frac{\theta}{2}\right)\cdot\frac{d\theta}{dt}+\frac{d\bm{n}}{dt}\cdot\sin\left(\frac{\theta}{2}\right)+\bm{n}\cdot\frac{1}{2}\cos\left(\frac{\theta}{2}\right)\cdot\frac{d\theta}{dt}
+\end{equation}
+式中$-1=\bm{n}\cdot\bm{n}$，$\frac{d\bm{n}}{dt}=0$，$\frac{d\theta}{dt}=\omega^w_wb$，$\omega^w_wb$为世界坐标系下世界坐标系到本体系的旋转角速度。对上式进一步化简有：
+\begin{equation}
+\centering
+\begin{aligned}
+\frac{d\bm{q}}{dt}&=\frac{1}{2}\bm{n}\omega_{wb}^w\left(\cos\left(\frac{\theta}{2}\right)+\bm{n}\sin\left(\frac{\theta}{2}\right)\right)\\
+&=\frac{1}{2}\bm{\omega}^w_{wb}\bm{q}
+\end{aligned}
+\end{equation}
+由于陀螺测量得到的角速度为本体系下的角速度$\bm{\omega}_{wb}^b$，和世界坐标系下角速度的关系\footnote{假设四元数$\bm{q}$表示世界坐标系到本体坐标系的旋转，即$f^b=\bm{q}f^w\bm{q}^\ast$。而此处矢量本身并未旋转，只因坐标系旋转引起了坐标的变化，相当于坐标系旋转的逆过程，因此有$\bm{w}^b_{wb}=\bm{q}^\ast\bm{w}^w_{wb}\bm{q}$。}可由四元数表示$\bm{q}\bm{\omega}_{wb}^b\bm{q}^\ast=\bm{\omega}_{wb}^w$，带入上式有：
+\begin{equation}
+\centering
+\frac{d\bm{q}}{dt}=\frac{1}{2}\bm{q}\bm{\omega}_{wb}^b\bm{q}^\ast\bm{q}
+\end{equation}
+利用单位四元数的性质$\bm{q}\bm{q}^{-1}=\bm{q}\bm{q}^\ast=\bm{I}$得到四元数微分和陀螺测量角速度之间的关系为：
+\begin{equation}
+\centering
+\frac{d\bm{q}}{dt}=\frac{1}{2}\bm{q}\bm{\omega}_{wb}^b
+\label{eq.append.b.6}
+\end{equation}
+上式写成矩阵形式为：
+\begin{equation}
+\centering
+\begin{aligned}
+\frac{d\bm{q}}{dt}&=\frac{1}{2}\left[\begin{matrix}
+0 & -\omega_x & -\omega_y & -\omega_z \\
+\omega_x & 0 & \omega_z & -\omega_y \\
+\omega_y & -\omega_z & 0 & \omega_x \\
+\omega_z & \omega_y & -\omega_x & 0 
+\end{matrix}\right]\bm{q}\\
+&=\frac{1}{2}\left[\begin{array}{cc}
+0 & -{\bm{\omega}_{wb}^b}^T\\
+\bm{\omega}_{wb}^b & -{\bm{\omega}_{wb}^b}^\wedge
+\end{array}\right]\\
+&=\frac{1}{2}\bm{\Omega}\left(\bm{\omega}_{wb}^b\right)\bm{q}
+\end{aligned}
+\end{equation}
+该矩阵形式默认四元数的排列为实部在前。
+
+此外，这里说明下四元数和坐标旋转矩阵之间的关系，假设$w$系旋转到$b$系对应的旋转四元数为$\bm{q}_w^b$，坐标旋转矩阵为$\bm{R}_w^b$，则对于任意一个矢量$\bm{a}$有$\bm{R}_w^b\bm{a}={\bm{q}_w^b}^\ast\bm{a}\bm{q}_w^b$，展开得：
+\begin{equation}
+\centering
+\begin{aligned}
+\bm{R}_w^b\bm{a}&=\left[\begin{array}{c}
+\left(q_w^2+q_x^2-q_y^2-q_z^2\right)x + 2\left(q_wq_z+q_xq_y\right)y+2\left(q_xq_z-q_2q_y\right)z\\
+2\left(q_xq_y-q_wq_z\right)x+\left(q_w^2-q_x^2+q_y^2-q_z^2\right)y+2\left(q_wq_x+q_yq_z\right)z\\
+2\left(q_wq_y-q_xq_z\right)x+2\left(q_yq_z-q_wq_x\right)y+\left(q_w^2-q_x^2-q_y^2+q_z^2\right)z
+\end{array}\right]\\
+&=\left[\begin{array}{ccc}
+\left(q_w^2+q_x^2-q_y^2-q_z^2\right) & 2\left(q_wq_z+q_xq_y\right) & 2\left(q_xq_z-q_2q_y\right)\\
+2\left(q_xq_y-q_wq_z\right) & \left(q_w^2-q_x^2+q_y^2-q_z^2\right) & 2\left(q_wq_x+q_yq_z\right)\\
+2\left(q_wq_y-q_xq_z\right) & 2\left(q_yq_z-q_wq_x\right) & \left(q_w^2-q_x^2-q_y^2+q_z^2\right)
+\end{array}\right]\left[\begin{array}{c}x\\y\\z\end{array}\right]
+\end{aligned}
+\end{equation}
+\subsection{四元数微分的毕卡算法}
+式\ref{eq.append.b.6}所表示的四元数微分方程可采用毕卡级数求解，这里省略详细的推导过程，直接给出四元数的毕卡积分解：
+\begin{equation}
+\bm{q}_{t_{k+1}}=e^{\frac{1}{2}\int_{t_k}^{t_{k+1}}\bm{\Omega}\left(\bm{\omega_{wb}^b}\right)dt}\bm{q}_{t_k}
+\label{eq.append.b.10}
+\end{equation}
+记$\Delta\bm{\Theta}=\int_{t_k}^{t_{k+1}}\bm{\Omega}\left(\bm{\omega_{wb}^b}\right)dt$，则：
+\begin{equation}
+\centering
+\begin{aligned}
+\Delta\Theta&=\int_{k}^{k+1}\left[\begin{matrix}
+0 & -\omega_x & -\omega_y & -\omega_z \\
+\omega_x & 0 & \omega_z & -\omega_y \\
+\omega_y & -\omega_z & 0 & \omega_x \\
+\omega_z & \omega_y & -\omega_x & 0 
+\end{matrix}\right]dt\\
+&\approx\left[\begin{matrix}
+0 & -\Delta\theta_x & -\Delta\theta_y & -\Delta\theta_z\\
+\Delta\theta_x & 0 & \Delta\theta_z & -\Delta\theta_y\\
+\Delta\theta_y & -\Delta\theta_z & 0 & \Delta\theta_x\\
+\Delta\theta_z & \Delta\theta_y & -\Delta\theta_x & 0
+\end{matrix}\right]
+\end{aligned}
+\end{equation}
+$\Delta\bm{\theta}=\left[\begin{array}{ccc}\Delta\theta_x & \Delta\theta_y&\Delta\theta_z\end{array}\right]$称为采样时间$\left[t_k, t_{k+1}\right]$内的角增量。将上式带入式\ref{eq.append.b.10}中并对其进行泰勒展开有：
+\begin{equation}
+\centering
+\begin{aligned}
+\bm{q}_{t_{k+1}}&=e^{\frac{1}{2}\Delta\bm{\Theta}}\bm{q}_{t_k}\\
+&=\left(\bm{I}+\frac{\frac{1}{2}\Delta\bm{\Theta}}{1!}+\frac{\left(\frac{1}{2}\Delta\bm{\Theta}\right)^2}{2!}+\frac{\left(\frac{1}{2}\Delta\bm{\Theta}\right)^3}{3!}+\frac{\left(\frac{1}{2}\Delta\bm{\Theta}\right)^4}{4!}+o\left(\frac{1}{2}\Delta\bm{\Theta}\right)\right)\bm{q}_{t_k}\\
+\end{aligned}
+\label{eq.append.b.12}
+\end{equation}
+上式中，$o\left(\frac{1}{2}\Delta\bm{\Theta}\right)$为高阶小量。$\Delta\bm{\Theta}$的幂函数存在一定的规律：
+\begin{equation}
+\centering
+\begin{aligned}
+\Delta\bm{\Theta}^2&=-\Delta\Theta^2\bm{I}\\
+\Delta\bm{\Theta}^3&=-\Delta\Theta^2\Delta\bm{\Theta}\\
+\Delta\bm{\Theta}^4&=-\Delta\Theta^4\bm{I}\\
+\Delta\bm{\Theta}^5&=\Delta\Theta^4\Delta\bm{\Theta}\\
+\cdots
+\end{aligned}
+\end{equation}
+将上式带入式\ref{eq.append.b.12}并合并包含和不包含$\Delta\bm{\Theta}$的同类项有：
+\begin{equation}
+\centering
+\begin{aligned}
+\bm{q}_{t_{k+1}}&=\left\{\bm{I}\left(1-\frac{\left(\frac{\Delta\theta}{2}\right)^2}{2!}+\frac{\left(\frac{\Delta\theta}{2}\right)^4}{4!}-\frac{\left(\frac{\Delta\theta}{2}\right)^6}{6!}+\cdots\right)+\frac{\Delta\bm{\Theta}}{2}\left(\frac{\left(\frac{\Delta\theta}{2}\right)}{1!}-\frac{\left(\frac{\Delta\theta}{2}\right)^3}{3!}+\frac{\left(\frac{\Delta\theta}{2}\right)^5}{5!}-\cdots\right)\frac{2}{\Delta\theta}\right\}\bm{q}_{t_k}\\
+&=\left(\bm{I}\cos\frac{\Delta\theta}{2}+\Delta\bm{\Theta}\frac{\sin\frac{\Delta\theta}{2}}{\Delta\theta}\right)\bm{q}_{t_k}
+\end{aligned}
+\end{equation}
+上式即为完整形式的四元数角增量毕卡算法。但实际应用中，为了避免计算三角函数，通常直接取近似解：
+\begin{enumerate}
+	\item 一阶近似毕卡算法：
+	\begin{equation}
+		\bm{q}_{t_k+1}=\left(\bm{I}+\frac{\Delta\bm{\Theta}}{2}\right)\bm{q}_{t_k}
+	\end{equation}
+	\item 二阶近似毕卡算法：
+	\begin{equation}
+	\bm{q}_{t_k+1}=\left[\bm{I}\left(1-\frac{\Delta\theta^2}{8}\right)+\frac{\Delta\bm{\Theta}}{2}\right]\bm{q}_{t_k}
+	\end{equation}	
+	\item 三阶近似毕卡算法：
+	\begin{equation}
+	\bm{q}_{t_k+1}=\left[\bm{I}\left(1-\frac{\Delta\theta^2}{8}\right)+\left(\frac{1}{2}-\frac{\Delta\theta^2}{48}\right)\Delta\bm{\Theta}\right]\bm{q}_{t_k}
+	\end{equation}
+	\item 四阶近似毕卡算法：
+	\begin{equation}
+	\bm{q}_{t_k+1}=\left[\bm{I}\left(1-\frac{\Delta\theta^2}{8}+\frac{\Delta\theta^4}{384}\right)+\left(\frac{1}{2}-\frac{\Delta\theta^2}{48}\right)\Delta\bm{\Theta}\right]\bm{q}_{t_k}
+	\end{equation}
+\end{enumerate}
+其中，将一阶毕卡算法写成四元数乘法形式为：
+\begin{equation}
+	\bm{q}_{t_{k+1}}=\bm{q}_{t_k}\otimes\left[\begin{array}{c}
+	1\\
+	\frac{\Delta\theta_x}{2}\\
+	\frac{\Delta\theta_y}{2}\\
+	\frac{\Delta\theta_z}{2}
+	\end{array}\right]\\
+\end{equation}
+进一步离散化有:
+\begin{equation}
+	\bm{q}_{t_{k+1}}=\bm{q}_{t_k}\otimes\left[\begin{array}{c}
+	1\\
+	\frac{1}{2}\bm{\omega}_{wb}^b\delta t
+	\end{array}\right]
+\end{equation}
+\subsection{基于四元数的IMU预积分}
+\subsubsection{连续时间形式}
+载体的位置、速度和姿态四元数在时间区间$\left[t_k,t_{k+1}\right]$内的传播方程为：
+\begin{equation}
+\centering
+\left\{
+\begin{aligned}
+&\bm{p}_{k+1}^w=\bm{p}_k^w+\bm{v}_k^w\Delta t_k+\iint_{t_i\in\left[t_k,t_{k+1}\right]}\left(\bm{R}_{b_{t_i}}^w\left(\hat{\bm{a}}_{t_i}-\bm{b}_a-\bm{n}_a\right)-\bm{g}^w\right)dt^2\\
+&\bm{v}_{k+1}^w=\bm{v}_k^w+\int_{t_i\in\left[t_k,t_{k+1}\right]}\left(\bm{R}_{b_{t_i}}^w\left(\hat{\bm{a}}_{t_i}-\bm{b}_a-\bm{n}_a\right)-\bm{g}^w\right)dt\\
+&\bm{q}_w^{b_{k+1}}=\bm{q}_w^{b_{k}}\otimes\int_{t_i\in\left[t_k,t_{k+1}\right]}\frac{1}{2}\bm{\Omega}\left(\hat{\bm{\omega}}_{wb}^w-\bm{b}_\omega-\bm{n}_\omega\right)\bm{q}_k^wdt
+\end{aligned}
+\right.
+\label{eq.append.b.11}
+\end{equation}
+式中${\bm{q}_w^{b_{k+1}}}$为世界坐标系到本体坐标系的旋转四元数，$\otimes$表示四元数乘法，$\bm{\Omega}\left(\bm{\omega}\right)$为上一小节中由$\bm{\omega}$组成的齐次矩阵，$\bm{b}_k$和$\bm{b}_{k+1}$分别为第$k$帧和第$k+1$帧对应的体坐标系，$\bm{b}_{t_i}$为$t_i$时刻的体坐标系。
+
+可以看出，IMU的由第$k$帧向第$k+1$帧的状态传播需要第$k$帧的旋转、位置和速度信息，这使得后端优化时，每当$k$帧位姿优化完后均需要重新计算$k+1$的相关变量；而若将\ref{eq.append.b.11}中右侧的积分项表示在$k$帧对应的本体系下，则该项不包含任何需要后端优化的位姿变量而只依赖于IMU的量测信息，更加便于后端优化处理。因此，增量形式的IMU状态传播方程为：
+\begin{equation}
+\centering
+\left\{
+\begin{aligned}
+	&\bm{R}_w^{b_k}\bm{p}_{k+1}^w=\bm{R}_w^{b_k}\left(\bm{p}_k^w+\bm{v}_k^w\Delta t_k-\frac{1}{2}\bm{g}^w\Delta t_k^2\right)+\hat{\bm{\alpha}}_{k+1}^{b_k}\\
+	&\bm{R}_w^{b_k}\bm{v}_{k+1}^w=\bm{R}_w^{b_k}\left(\bm{v}_k^w-\bm{g}^w\Delta t_k\right)+\hat{\bm{\beta}}_{k+1}^{b_k}\\
+	&\bm{q}_{b_{k}}^w\otimes\bm{q}_w^{b_{k+1}}=\hat{\bm{\gamma}}_{k+1}^{b_k}
+\end{aligned}
+\right.
+\end{equation}
+式中，$\bm{\alpha}_{k+1}^{b_k}$、$\bm{\beta}_{k+1}^{b_k}$和$\bm{\gamma_{k+1}^{b_k}}$分别为$b_k$坐标系下第$k$和$k+1$帧之间IMU的预积分项：
+\begin{equation}
+\centering
+\left\{
+\begin{aligned}
+&\hat{\bm{\alpha}}_{k+1}^{b_k}=\iint_{t_i\in\left[t_k,t_{k+1}\right]}\left(\bm{R}_{b_{t_i}}^w\left(\hat{\bm{a}}_{t_i}-\bm{b}_a-\bm{n}_a\right)\right)dt^2\\
+&\hat{\bm{\beta}}_{k+1}^{b_k}=\int_{t_i\in\left[t_k,t_{k+1}\right]}\left(\bm{R}_{b_{t_i}}^w\left(\hat{\bm{a}}_{t_i}-\bm{b}_a-\bm{n}_a\right)\right)dt\\
+&\hat{\bm{\gamma}}_{k+1}^{b_k}=\int_{t_i\in\left[t_k,t_{k+1}\right]}\frac{1}{2}\bm{\Omega}\left(\hat{\bm{\omega}}_{wb}^w-\bm{b}_\omega-\bm{n}_\omega\right)\bm{\gamma}_k^{t_i}dt
+\end{aligned}
+\right.
+\label{eq.append.b.21}
+\end{equation}
+可以看出，\ref{eq.append.b.21}中的IMU预积分项只和实际IMU期间量测以及IMU零偏有关。当后端优化的IMU零偏变化时，若变化较小，则使用IMU预积分项关于零偏的一阶近似更新预积分项；否则，则按照式\ref{eq.append.b.21}重新积分IMU得到预积分项。IMU预积分关于零偏的线性化更新表达式可以表示为：
+\begin{equation}
+\left\{
+\begin{aligned}
+&\hat{\bm{\alpha}}_k^{k+1}\approx\hat{\bm{\alpha}}_k^{k+1}+\bm{J}^{\bm{\alpha}}_{\bm{b}_a}\delta\bm{b}_a+\bm{J}^{\bm{\alpha}}_{\bm{b}_\omega}\delta\bm{b}_\omega\\
+&\hat{\bm{\beta}}_k^{k+1}\approx\hat{\bm{\beta}}_k^{k+1}+\bm{J}^{\bm{\beta}}_{\bm{b}_a}\delta\bm{b}_a+\bm{J}^{\bm{\beta}}_{\bm{b}_\omega}\delta\bm{b}_\omega\\
+&\hat{\bm{\gamma}}_k^{k+1}=\hat{\bm{\gamma}}_k^{k+1}\otimes\bm{J}^{\bm{\gamma}}_{\bm{b}_\omega}\delta\bm{b}_\omega
+\end{aligned}
+\right.
+\label{eq.append.b.13}
+\end{equation}
+\subsubsection{离散时间形式}
+为了便于实际程序的执行，需要将上述连续形式的预积分方程改写为离散形式，由于噪声均值为零，预积分中可以忽略不计，因此两个IMU量测时刻$i$和$i+1$之间离散形式的IMU预积分方程为：
+\begin{equation}
+\centering
+\left\{
+\begin{aligned}
+&\bm{p}_{i+1}^w=\bm{p}_i^w+\bm{v}_i^w\Delta t_i+\frac{1}{2}\overline{\bm{a}}_{t_i}\delta t^2\\
+&\bm{v}_{i+1}^w=\bm{v}_i^w+\overline{\bm{a}}_{t_i}\delta t\\
+&\bm{q}_w^{b_{i+1}}=\bm{q}_w^{b_{i}}\otimes\left[\begin{array}{c}1\\\frac{1}{2}\overline{\bm{\omega}}_{t_i}\delta t
+\end{array}\right]
+\end{aligned}
+\right.
+\end{equation}
+式中，$\overline{\bm{a}}_{t_i}$和$\overline{\bm{\omega}}_{t_i}$分别表示离散区间内的离散加速度，具体表达形式由离散方法决定：
+\begin{enumerate}
+	\item 欧拉法：
+	\begin{equation}
+	\centering
+	\left\{
+	\begin{aligned}
+	&\overline{\bm{a}}_{t_i}=\bm{R}_{b_{t_i}}^w\left(\hat{\bm{a}}_{t_i}-\bm{b}_a\right)-\bm{g}^w\\
+	&\overline{\bm{\omega}}_{t_i}=\hat{\bm{\omega}}_{t_i}-\bm{b}_\omega
+	\end{aligned}
+	\right.
+	\end{equation}
+	\item 中值法：
+	\begin{equation}
+	\centering
+	\left\{
+	\begin{aligned}
+	&\overline{\bm{a}}_{t_i}=\frac{1}{2}\left[\bm{R}_{b_{t_i}}^w\left(\hat{\bm{a}}_{t_i}-\bm{b}_a\right)+\bm{R}_{b_{t_{i+1}}}^w\left(\hat{\bm{a}}_{t_{i+1}}-\bm{b}_a\right)\right]-\bm{g}^w\\
+	&\overline{\bm{\omega}}_{t_i}=\frac{1}{2}\left(\hat{\bm{\omega}}_{t_i}+\hat{\bm{\omega}}_{t_{i+1}}\right)-\bm{b}_\omega
+	\end{aligned}
+	\right.
+	\end{equation}
+\end{enumerate}
+同理，可得到离散的增量形式IMU预积分方程为：
+\begin{equation}
+\centering
+\left\{
+\begin{aligned}
+&\hat{\bm{\alpha}}_{i+1}^{b_k}=\hat{\bm{\alpha}}_i^{b_k}+\hat{\bm{\beta}}_i^{b_k}\delta t+\frac{1}{2}\overline{\bm{a}}_i\delta t^2\\
+&\hat{\bm{\beta}}_{i+1}^{b_k}=\hat{\bm{\beta}}_i^{b_k}+\overline{\bm{a}}_i\delta t\\
+&\hat{\bm{\gamma}}_{i+1}^{b_k}=\hat{\bm{\gamma}}_i^{b_k}\otimes\left[\begin{array}{c}1\\\frac{1}{2}\overline{\bm{\omega}}_i\delta t\end{array}\right]
+\end{aligned}
+\right.
+\end{equation}
+同样有欧拉法和中值法两种离散形式：
+\begin{enumerate}
+	\item 欧拉法：
+	\begin{equation}
+	\centering
+	\left\{
+	\begin{aligned}
+	&\overline{\bm{a}}_i=\bm{R}\left(\hat{\bm{\gamma}}_i^{b_k}\right)\left(\hat{\bm{a}}_i-\bm{b}_a\right)\\
+	&\overline{\bm{\omega}}_i=\hat{\bm{\omega}}_i-\bm{b}_\omega
+	\end{aligned}
+	\right.
+	\end{equation}
+	\item 中值法：
+	\begin{equation}
+	\centering
+	\left\{
+	\begin{aligned}
+	&\overline{\bm{a}}_i=\frac{1}{2}\left[\bm{R}\left(\hat{\bm{\gamma}}_i^{b_k}\right)\left(\hat{\bm{a}}_i-\bm{b}_a\right)+\bm{R}\left(\hat{\bm{\gamma}}_{i+1}^{b_k}\right)\left(\hat{\bm{a}}_{i+1}-\bm{b}_a\right)\right]\\
+	&\overline{\bm{\omega}}_i=\frac{1}{2}\left(\hat{\bm{\omega}}_i+\hat{\bm{\omega}}_{i+1}\right)-\bm{b}_\omega
+	\end{aligned}
+	\right.
+	\end{equation}
+\end{enumerate}
+\subsection{IMU预积分误差动力学方程与协方差矩阵}
+在VINS的优化中，由于采用马氏距离构建二乘函数，需要对状态的协方差矩阵进行更新，而协方差矩阵的一步预测依赖于状态的误差动力学方程，因此这里我们首先就IMU预积分项的误差动力学方程进行推导。涉及的状态量包括位置增量$\bm{\alpha}_{k+1}^{b_k}$、速度增量$\bm{\beta}_{k+1}^{b_k}$、姿态增量$\bm{\theta}_{k+1}^{b_k}$、加速度计零偏$\bm{b}_a$和陀螺仪零偏$\bm{b_\omega}$，其中由于陀螺器件测量为角增量，这里使用角增量$\bm{\theta}_{k+1}^{b_k}$代替四元数增量$\bm{\gamma}_{k+1}^{b_k}$。
+\subsubsection{连续时间形式}
+由于我们需要求解的是上述各增量的误差动力学方程，因此系统状态空间矢量可记为\footnote{由于增量表示的是$k+1$和$k$之间的相对值，这里为了书写方便，下标使用$k$而非前面$k+1$，同时改用下标$t$表示IMU测量时刻，以区别图像帧时刻$k$，但两者本质上是同一个量。}。
+\begin{equation}
+\delta\bm{x}=\left[\begin{array}{ccccccccc}
+\delta\bm{\alpha}_t^{b_k} & \delta\bm{\beta}_t^{b_k} & \delta\bm{\theta}_t^{b_k} & \delta\bm{b}_a & \delta\bm{b}_\omega & \bm{n}_a & \bm{n}_\omega & \bm{n}_{\bm{b}_a} & \bm{n}_{\bm{b}_\omega}
+\end{array}\right] 
+\end{equation}
+由于导数运算的顺序可以交换，即$\delta\dot{\bm{a}}=\dot{\delta\bm{a}}$，我们可以先求当前变量的时间导数，再求其对各状态量的偏导数。
+\begin{enumerate}
+	\item \textbf{位置增量误差}$\delta\bm{\alpha}_t^{b_k}$
+	
+	位置增量的时间导数为$\dot{\bm{\alpha}}_t^{b_k}=\bm{\beta}_t^{b_k}$，显然，除了偏导数$\delta\dot{\bm{\alpha}}_t^{b_k}/\delta\bm{\beta}_t^{b_k}=\bm{I}$外，位置增量的导数对其余状态增量的导数为零，即其余状态增量的变化对位置增量误差的导数没有贡献.
+	\item \textbf{速度增量误差}$\delta\bm{\beta}_t^{b_k}$
+	
+	速度增量的时间导数为$\dot{\bm{\beta}}_t^{b_k}=\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a-\bm{n}_a\right)$，可以看出非零偏导数共有三项，分别为：
+	\begin{equation}
+	\begin{aligned}
+	\frac{\delta\bm{\beta}_t^{b_k}}{\delta\bm{\theta}_k^{b_k}}&=-\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a-\bm{n}_a\right)\\
+	&\approx-\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)\\
+	\frac{\delta\bm{\beta}_t^{b_k}}{\bm{b}_a}&=-\bm{R}_{b_t}^{b_k}\\
+	\frac{\delta\bm{\beta}_t^{b_k}}{\bm{n}_a}&=-\bm{R}_{b_t}^{b_k}
+	\end{aligned}
+	\end{equation}
+	其中，由于状态递推的本质是随机变量均值的传播，而$\bm{n}_a$是零均值的高斯白噪声，可作为零值处理。
+	\item \textbf{角增量误差}$\delta\bm{\theta}_t^{b_k}$
+	
+	由于角增量的运算中涉及四元数的乘法，使用导数微分定义求解会比较复杂，这里我们换一种思路，假设无任何偏差的四元数时间导数和带各项扰动的四元数时间导数分别为$\dot{\bm{q}}_n$和$\dot{\bm{q}}_t$，则：
+	\begin{equation}
+	\begin{aligned}
+	\dot{\bm{q}}_t&=\frac{1}{2}\underbrace{\bm{q}\otimes\delta\bm{q}}_{\delta\bm{\theta}}\otimes\left[\begin{array}{c}
+	0\\\hat{\bm{\omega}}-\bm{b}_\omega-\bm{n}_\omega-\delta\bm{b}_\omega	
+	\end{array}\right]\\
+	\dot{\bm{q}}_n&=\frac{1}{2}\bm{q}\otimes\left[\begin{array}{c}
+	0\\\hat{\bm{\omega}}-\bm{b}_\omega
+	\end{array}\right]	
+	\end{aligned}
+	\end{equation}
+	同时，$\dot{\bm{q}}_t$又可表示为：
+	\begin{equation}
+	\begin{aligned}
+	\dot{\bm{q}}_t&=\frac{\partial\left(\bm{q}\otimes\delta\bm{q}\right)}{\partial t}=\dot{\bm{q}}\otimes\delta\bm{q}+\bm{q}\otimes\dot{\delta\bm{q}}\\
+	&=\frac{1}{2}\bm{q}\otimes\left[\begin{array}{c}
+	0\\\bm{\omega}-\bm{b}_\omega
+	\end{array}\right]\otimes\delta\bm{q}+\bm{q}\otimes\dot{\delta\bm{q}}
+	\end{aligned}
+	\end{equation}
+	令上述两式相等可得到：
+	\begin{equation}
+	\begin{aligned}
+	&\frac{1}{2}\bm{q}\otimes\delta\bm{q}\otimes\left[\begin{array}{c}
+	0\\\hat{\bm{\omega}}-\bm{b}_\omega-\bm{n}_\omega-\delta\bm{b}_\omega	
+	\end{array}\right]=\frac{1}{2}\bm{q}\otimes\left[\begin{array}{c}
+	0\\\bm{\omega}-\bm{b}_\omega
+	\end{array}\right]\otimes\delta\bm{q}+\bm{q}\otimes\dot{\delta\bm{q}}\\
+	\Rightarrow&\frac{1}{2}\delta\bm{q}\otimes\left[\begin{array}{c}
+	0\\\hat{\bm{\omega}}-\bm{b}_\omega-\bm{n}_\omega-\delta\bm{b}_\omega	
+	\end{array}\right]=\frac{1}{2}\left[\begin{array}{c}
+	0\\\bm{\omega}-\bm{b}_\omega
+	\end{array}\right]\otimes\delta\bm{q}+\dot{\delta\bm{q}}\\
+	\Rightarrow&2\dot{\delta}\bm{q}=\delta\bm{q}\otimes\left[\begin{array}{c}
+	0\\\hat{\bm{\omega}}-\bm{b}_\omega-\bm{n}_\omega-\delta\bm{b}_\omega	
+	\end{array}\right]-\left[\begin{array}{c}
+	0\\\bm{\omega}-\bm{b}_\omega
+	\end{array}\right]\otimes\delta\bm{q}\\
+	\Rightarrow&2\dot{\delta\bm{q}}=\mathcal{R}\left(\left[\begin{array}{c}
+	0\\\hat{\bm{\omega}}-\bm{b}_\omega-\bm{n}_\omega-\delta\bm{b}_\omega	
+	\end{array}\right]\right)\delta\bm{q}-\mathcal{L}\left(\left[\begin{array}{c}
+	0\\\bm{n}_\omega+\delta\bm{b}_\omega
+	\end{array}\right]\right)\delta\bm{q}\\
+	\Rightarrow&2\dot{\delta\bm{q}}=\left[\begin{matrix}
+		0 & \left(\bm{n}_\omega+\delta\bm{b}_\omega\right)^T\\
+		-\left(\bm{n}_\omega-\delta\bm{b}_\omega\right) & -\left(2\hat{\bm{\omega}}-2\bm{b}_\omega-\bm{n}_\omega-\delta\bm{b}_\omega\right)^\wedge\\
+		\end{matrix}\right]\left[\begin{array}{c}
+		1\\\frac{\delta\bm{\theta}}{2}
+		\end{array}\right]\\
+	\end{aligned}	
+	\end{equation}
+	将$\dot{\delta\bm{q}}=\left[\begin{array}{c}
+	0\\\frac{1}{2}\dot{\delta\bm{\theta}}
+	\end{array}\right]$带入上式可以并忽略零均值项$\bm{n}_\omega$以及二阶小量$\delta\bm{b}_\omega\delta\bm{\theta}$可以得到：
+	\begin{equation}
+	\begin{aligned}
+	\left[\begin{array}{c}
+	0\\\dot{\delta\bm{\theta}}\end{array}\right]&=\left[\begin{matrix}
+	0 & \left(\bm{n}_\omega+\delta\bm{b}_\omega\right)^T\\
+	-\left(\bm{n}_\omega-\delta\bm{b}_\omega\right) & -\left(2\hat{\bm{\omega}}-2\bm{b}_\omega-\bm{n}_\omega-\delta\bm{b}_\omega\right)^\wedge\\
+	\end{matrix}\right]\left[\begin{array}{c}
+	1\\\frac{\delta\bm{\theta}}{2}
+	\end{array}\right]\\
+	\Rightarrow\dot{\delta\bm{\theta}}&\approx-\left(\hat{\bm{\omega}}-\bm{b}_\omega\right)^\wedge\delta\bm{\theta}-\bm{n}_\omega-\delta\bm{b}_\omega
+	\end{aligned}
+	\end{equation}
+	\item \textbf{加速度计零偏误差}$\delta\bm{b}_a$：根据IMU的器件模型有$\delta\dot{\bm{b}}_a=\bm{n}_{\bm{b}_a}$。
+	\item \textbf{陀螺零偏误差}$\delta\bm{b}_\omega$：同样根据IMU的器件模型有$\delta\dot{\bm{b}}_\omega=\bm{n}_{\bm{b}_\omega}$。
+\end{enumerate}
+
+至此，我们已经获得了所有非零均值状态量动力学方程，写成矩阵形式为：
+\begin{equation}
+\begin{aligned}
+\left[\begin{array}{c}
+\delta\dot{\bm{\alpha}}_t^{b_k}\\\delta\dot{\bm{\beta}}_t^{b_k}\\\delta\dot{\bm{\theta}}_t^{b_k}\\
+\delta\dot{\bm{b}_a}\\\delta\dot{\bm{b}_\omega}
+\end{array}\right]&=\left[\begin{matrix}
+0 & \bm{I} & 0 & 0 & 0\\
+0 & 0 & -\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge & -\bm{R}_{b_t}^{b_k} & 0\\
+0 & 0 & -\left(\hat{\bm{\omega}}_t-\bm{b}_\omega\right)^\wedge & 0 & -\bm{I}\\
+0 & 0 & 0 & 0 & 0\\
+0 & 0 & 0 & 0 & 0
+\end{matrix}\right]\left[\begin{array}{c}
+\delta\bm{\alpha}_t^{b_k}\\\delta\bm{\beta}_t^{b_k}\\\delta\bm{\theta}_t^{b_k}\\
+\delta\bm{b}_a\\\delta\bm{b}_\omega
+\end{array}\right]\\
+&+\left[\begin{matrix}
+0 & 0 & 0 & 0\\
+-\bm{R}_{b_t}^{b_k} & 0 & 0 & 0\\
+0 & -\bm{I} & 0 & 0\\
+0 & 0 & \bm{I} & 0\\
+0 & 0 & 0 & \bm{I}
+\end{matrix}\right]\left[\begin{array}{c}
+\bm{n}_a\\\bm{n}_\omega\\\bm{n}_{\bm{b}_a}\\\bm{n}_{\bm{b}_\omega}
+\end{array}\right]\\
+\Rightarrow\dot{\delta\bm{x}}_t&=\bm{f}_t\delta\bm{x}_t+\bm{v}_t\bm{n}_t
+\end{aligned}\end{equation}
+根据导数的定义，可以将上式改写为递推形式：
+\begin{equation}
+\begin{aligned}
+\frac{\delta\bm{x}_{t+1}-\delta\bm{x}_t}{\delta t}&=\bm{f}_t\delta\bm{x}_t+\bm{v}_t\bm{n}_t\\
+\delta\bm{x}_{t+1}&=\delta\bm{x}_t+\bm{f}_t\delta\bm{x}_t\delta t + \bm{v}_t\bm{n}_t\delta t\\
+&=\underbrace{\left(\bm{I}+\bm{f}_t\delta t\right)}_{\bm{F}_t}\delta\bm{x}_t+\underbrace{\bm{v}_t\delta t}_{\bm{V}_t}\bm{n}_t
+\end{aligned}
+\end{equation}
+可以看出，上式是一个标准的状态空间模型，给出了随机变量均值的传播方程；同样，我们可以直接写出随机变量方差的传播方程：
+\begin{equation}
+	\begin{aligned}
+	\bm{P}_{t+1}&=\bm{F}_t\bm{P}_t\bm{F}_t^T+\bm{V}_t\bm{Q}_t\bm{V}_t^T\\
+	\bm{P}_0&=\bm{0}\\
+	\bm{Q}_0&=\left[\begin{matrix}
+	\sigma_a^2 & 0 & 0 & 0\\
+	0 & \sigma_\omega^2 & 0 & 0\\
+	0 & 0 & \sigma_{\bm{b}_a}^2 & 0\\
+	0 & 0 & 0 & \sigma_{\bm{b}_\omega}^2
+	\end{matrix}\right]
+	\end{aligned}
+\end{equation}
+误差系数自身的雅克比矩阵为：
+\begin{equation}\begin{aligned}
+\bm{J}_{k+1}&=\prod\limits_{t\in\left[k,k+1\right]}\bm{F}_t\bm{J}_k\\
+\bm{J}_k&=\bm{I}
+\end{aligned}
+\end{equation}
+注意这里的下标为图像帧$k$而非IMU量测$t$。
+\subsubsection{离散时间形式}
+同样，这里我们基于连续时间形式的误差动力学给出离散形式的误差递推方程，由于程序中采用的是中值积分，这里仅推导中值积分下的离散误差方程
+\begin{enumerate}
+	\item \textbf{角增量误差}$\delta\bm{\alpha}_t^{b_k}$
+	
+	由于速度误差中耦合了角增量误差，这里我们先给出角增量误差的离散形式，中值点导数$\overline{\delta\dot{\bm{\theta}}}$为：
+	\begin{equation}
+	\begin{aligned}
+	\delta\dot{\bm{\theta}}_t&=-\left(\hat{\bm{\omega}}_t-\bm{b}_\omega\right)^\wedge\delta\bm{\theta}_t-{\bm{n}_\omega}_t-\delta\bm{b}_\omega\\
+	\delta\dot{\bm{\theta}}_{t+1}&=-\left(\hat{\bm{\omega}}_{t+1}-\bm{b}_\omega\right)^\wedge\delta\bm{\theta}_t-{\bm{n}_\omega}_{t+1}-\delta\bm{b}_\omega\\
+	\overline{\delta\dot{\bm{\theta}}}&=\frac{\left(\delta\dot{\bm{\theta}}_t+\delta\dot{\bm{\theta}}_{t+1}\right)}{2}\\
+	&=-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta\bm{\theta}_t-\frac{{\bm{n}_\omega}_t+{\bm{n}_\omega}_{t+1}}{2}-\delta\bm{b}_\omega
+	\end{aligned}
+	\end{equation}
+	根据导数定义展开得到：
+	\begin{equation}
+	\begin{aligned}
+	\frac{\delta\bm{\theta}_{k+1}-\delta\bm{\theta}_k}{\delta t}&=-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta\bm{\theta}-\frac{{\bm{n}_\omega}_t+{\bm{n}_\omega}_{t+1}}{2}-\delta\bm{b}_\omega\\
+	\Rightarrow\delta\bm{\theta}_{t+1}&=\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\delta\bm{\theta}-\frac{{\bm{n}_\omega}_t+{\bm{n}_\omega}_{t+1}}{2}\delta t-\delta\bm{b}_\omega\delta t
+	\end{aligned}
+	\label{eq.delta_theta_discrete}
+	\end{equation}
+	
+	\item \textbf{速度增量误差}$\delta\bm{\beta}_t^{b_k}$
+	
+	同样我们先求中值点的导数值$\overline{\delta\dot{\bm{\beta}}}$：
+	\begin{equation}
+	\begin{aligned}
+	\delta\dot{\bm{\beta}}_t&=-\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge\delta\bm{\theta}_t-\bm{R}_{b_t}^{b_k}\delta\bm{b}_a-\bm{R}_{b_t}^{b_k}{\bm{n}_a}_t\\
+	\delta\dot{\bm{\beta}}_{t+1}&=-\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta\bm{\theta}_{t+1}-\bm{R}_{b_{t+1}}^{b_k}\delta\bm{b}_a-\bm{R}_{b_{t+1}}^{b_k}{\bm{n}_a}_{t+1}\\
+	\overline{\delta\dot{\bm{\beta}}}&=\frac{\delta\dot{\bm{\beta}}_t+\delta\dot{\bm{\beta}}_{t+1}}{2}\\
+	&=-\frac{1}{2}\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge\delta\bm{\theta}_t-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta\bm{\theta}_{t+1}-\frac{1}{2}\left(\bm{R}_{b_t}^{b_k}+\bm{R}_{b_{t+1}}^{b_k}\right)\delta\bm{b}_a\\
+	&-\frac{1}{2}\bm{R}_{b_t}^{b_k}{\bm{n}_a}_t-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}{\bm{n}_a}_{t+1}
+	\end{aligned}
+	\end{equation}
+	由于使用了中值积分，这里需要使用$t+1$时刻的角增量误差$\delta\bm{\theta}_{t+1}$，将式\ref{eq.delta_theta_discrete}带入上式并按照对应的状态量整理得：
+	\begin{equation}
+	\begin{aligned}
+		\delta\dot{\bm{\beta}}_t&=-\frac{1}{2}\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge\delta\bm{\theta}_t\\
+		&-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\left\{\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\delta\bm{\theta}_t-\frac{{\bm{n}_\omega}_t+{\bm{n}_\omega}_{t+1}}{2}\delta t-\delta\bm{b}_\omega\delta t\right\}\\
+		&-\frac{1}{2}\left(\bm{R}_{b_t}^{b_k}+\bm{R}_{b_{t+1}}^{b_k}\right)\delta\bm{b}_a-\frac{1}{2}\bm{R}_{b_t}^{b_k}{\bm{n}_a}_t-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}{\bm{n}_a}_{t+1}\\
+		%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+		&=\left\{-\frac{1}{2}\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\right\}\delta\bm{\theta}_t\\
+		&\qquad\begin{aligned}
+			&-\frac{1}{2}\left(\bm{R}_{b_t}^{b_k}+\bm{R}_{b_{t+1}}^{b_k}\right)\delta\bm{b}_a+\frac{\delta t}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta\bm{b}_\omega\\
+			&-\frac{1}{2}\bm{R}_{b_t}^{b_k}{\bm{n}_a}_t-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}{\bm{n}_a}_{t+1}\\
+			&+\frac{\delta t}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge{\bm{n}_\omega}_t+\frac{\delta t}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge{\bm{n}_\omega}_{t+1}\\
+		\end{aligned}
+	\end{aligned}
+	\end{equation}
+	
+	同样根据导数定义可以得到速度增量误差的递推方程：
+	\begin{equation}
+	\begin{aligned}
+		\delta\bm{\beta}_{t+1}=\delta\bm{\beta}_t&+\left\{-\frac{1}{2}\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\right\}\delta t\delta\bm{\theta}_t\\
+		&-\frac{1}{2}\left(\bm{R}_{b_t}^{b_k}+\bm{R}_{b_{t+1}}^{b_k}\right)\delta t\delta\bm{b}_a+\frac{\delta t^2}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta\bm{b}_\omega\\
+		&-\frac{1}{2}\bm{R}_{b_t}^{b_k}\delta t{\bm{n}_a}_t-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\delta t{\bm{n}_a}_{t+1}\\
+		&+\frac{\delta t^2}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge{\bm{n}_\omega}_t+\frac{\delta t^2}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge{\bm{n}_\omega}_{t+1}\\
+	\end{aligned}
+	\end{equation}
+	
+	\item \textbf{位置增量误差}$\delta\bm{\alpha}_t^{b_k}$
+	中值点导数值为$\overline{\delta\bm{\alpha}}_t=\frac{\delta\bm{\beta}_t+\delta\bm{\beta}_{t+1}}{2}$，进一步可得位置增量误差递推方程为：
+	\begin{equation}
+	\delta\bm{\alpha}_{t+1}=\delta\bm{\alpha}_t+\frac{\delta\bm{\beta}_t+\delta\bm{\beta}_{t+1}}{2}\delta t
+	\end{equation}
+	带入速度增量误差表达式有：
+	\begin{equation}
+	\centering
+	\begin{aligned}
+	\delta\bm{\alpha}_{t+1}&=\delta\bm{\alpha}_t+\frac{\delta t}{2}\delta\bm{\beta}_t\\
+	&+\frac{\delta t}{2}\delta\bm{\beta}_t+\left\{-\frac{1}{2}\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\right\}\frac{\delta t}{2}\delta t\delta\bm{\theta}_t\\
+	&-\frac{1}{2}\left(\bm{R}_{b_t}^{b_k}+\bm{R}_{b_{t+1}}^{b_k}\right)\delta t\frac{\delta t}{2}\delta\bm{b}_a+\frac{\delta t^2}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\frac{\delta t}{2}\delta\bm{b}_\omega\\
+	&-\frac{1}{2}\bm{R}_{b_t}^{b_k}\frac{\delta t}{2}\delta t{\bm{n}_a}_t-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\frac{\delta t}{2}\delta t{\bm{n}_a}_{t+1}\\
+	&+\frac{\delta t^2}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\frac{\delta t}{2}{\bm{n}_\omega}_t+\frac{\delta t^2}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\frac{\delta t}{2}{\bm{n}_\omega}_{t+1}\\
+	\end{aligned}
+	\end{equation}
+	整理后得到：
+	\begin{equation}
+	\centering
+	\begin{aligned}
+	\delta\bm{\alpha}_{t+1}&=\delta\bm{\alpha}_t+\delta\bm{\beta}_t\delta t\\
+	&+\left\{-\frac{1}{4}\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge\delta t^2-\frac{1}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\delta t^2\right\}\delta\bm{\theta}_t\\
+	&-\frac{1}{4}\left(\bm{R}_{b_t}^{b_k}+\bm{R}_{b_{t+1}}^{b_k}\right)\delta t^2\delta\bm{b}_a+\frac{1}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^3\delta\bm{b}_\omega\\
+	&-\frac{1}{4}\bm{R}_{b_t}^{b_k}\delta t^2{\bm{n}_a}_t-\frac{1}{4}\bm{R}_{b_{t+1}}^{b_k}\delta t^2{\bm{n}_a}_{t+1}\\
+	&+\frac{1}{8}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^3{\bm{n}_\omega}_t+\frac{1}{8}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^3{\bm{n}_\omega}_{t+1}\\
+	\end{aligned}
+	\end{equation}	
+	
+	\item \textbf{加速度计零偏误差}$\delta\bm{b}_a$：根据IMU的器件模型有$\delta\dot{\bm{b}}_a=\bm{n}_{\bm{b}_a}$，递推形式为：
+	${\delta\bm{b}_a}_{t+1}={\delta\bm{b}_a}_t+\bm{n}_{\bm{b}_a}\delta t$。
+	\item \textbf{陀螺零偏误差}$\delta\bm{b}_\omega$：同样根据IMU的器件模型有$\delta\dot{\bm{b}}_\omega=\bm{n}_{\bm{b}_\omega}$。
+	
+	同样，这里我们将上面所有的增量误差递推方程整理为矩阵形式有：
+	\begin{equation}
+	\begin{aligned}
+	\left[\begin{array}{c}
+	\delta\bm{\alpha}_{t+1}\\\delta\bm{\theta}_{t+1}\\\delta\bm{\beta}_{t+1}\\
+	\delta{\bm{b}_a}_{t+1}\\\delta{\bm{b}_\omega}_{t+1}
+	\end{array}\right]&=
+	\left[\begin{matrix}
+	\bm{I} & f_{01} & \delta t\bm{I} & f_{03} & f_{04}\\
+	 0 & f_{11} & 0 & 0 & -\delta t\bm{I}\\
+	 0 & f_{21} & \bm{I} & f_{23} & f_{24} \\
+	 0 & 0 & 0 & \bm{I} & 0 \\
+	 0 & 0 & 0 & 0 & \bm{I}
+	\end{matrix}\right]\left[\begin{array}{c}
+	\delta\bm{\alpha}_t\\\delta\bm{\theta}_t\\\delta\bm{\beta}_t\\
+	\delta{\bm{b}_a}_t\\\delta{\bm{b}_\omega}_t
+	\end{array}\right]\\
+	&+\left[\begin{matrix}
+	v_{00} & v_{01} & v_{02} & v_{03} & 0 & 0\\
+	0 & -\frac{\delta t}{2}\bm{I} & 0 & -\frac{\delta t}{2}\bm{I} & 0 & 0\\
+	-\frac{\bm{R}_{b_t}^{b_k}\delta t}{2} & v_{21} & -\frac{\bm{R}_{b_{t+1}}^{b_k}\delta t}{2} & v_{23} & 0 & 0\\
+	0 & 0 & 0 & 0 & \delta t\bm{I} & 0\\
+	0 & 0 & 0 & 0 & 0 & \delta t\bm{I}
+	\end{matrix}\right]\left[\begin{array}{c}
+	{\bm{n}_a}_t\\{\bm{n}_\omega}_t\\{\bm{n}_a}_{t+1}\\{\bm{n}_\omega}_{t+1}\\
+	\bm{n}_{\bm{b}_a}\\\bm{n}_{\bm{b}_\omega}
+	\end{array}\right]
+	\end{aligned}
+	\end{equation}
+	$\bm{F}$矩阵中对应元素具体表达式如下：
+	\begin{equation}
+	\begin{aligned}	
+	f_{01}&=\left\{-\frac{1}{4}\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge\delta t^2-\frac{1}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\delta t^2\right\}\\
+	f_{03}&=-\frac{1}{4}\left(\bm{R}_{b_t}^{b_k}+\bm{R}_{b_{t+1}}^{b_k}\right)\delta t^2\\
+	f_{04}&=\frac{1}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^3\\
+	f_{11}&=\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\\
+	f_{21}&=\left\{-\frac{1}{2}\bm{R}_{b_t}^{b_k}\left(\hat{\bm{a}}_t-\bm{b}_a\right)^\wedge-\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\left[\bm{I}-\left(\frac{\hat{\bm{\omega}}_t+\hat{\bm{\omega}}_{t+1}}{2}-\bm{b}_\omega\right)^\wedge\delta t\right]\right\}\delta t\\
+	f_{23}&=-\frac{1}{2}\left(\bm{R}_{b_t}^{b_k}+\bm{R}_{b_{t+1}}^{b_k}\right)\delta t\\
+	f_{24}&=\frac{1}{2}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^2
+	\end{aligned}
+	\end{equation}
+	$\bm{V}$矩阵中对应元素具体表达式如下：
+	\begin{equation}
+	\begin{aligned}
+	v_{00}&=-\frac{1}{4}\bm{R}_{b_t}^{b_k}\delta t^2\\
+	v_{01}&=\frac{1}{8}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^3\\
+	v_{02}&=-\frac{1}{4}\bm{R}_{b_{t+1}}^{b_k}\delta t^2\\
+	v_{03}&=\frac{1}{8}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^3\\
+	v_{21}&=\frac{1}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^2\\
+	v_{23}&=\frac{1}{4}\bm{R}_{b_{t+1}}^{b_k}\left(\hat{\bm{a}}_{t+1}-\bm{b}_a\right)^\wedge\delta t^2
+	\end{aligned}
+	\end{equation}
+\end{enumerate}
